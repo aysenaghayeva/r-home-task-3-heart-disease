@@ -1,0 +1,272 @@
+---
+title: "R Home task 3"
+author: "Ayşən A."
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    css: styles.css
+    
+---
+<script>
+   $(document).ready(function() {
+     $head = $('#header');
+     $head.prepend('<img src=\"https://www.aztu.edu.az/sub_site/assets/dist/img/logo-footerr.png\" style=\"float: right;width: 300px;\"/>')
+   });
+</script>
+
+
+### İlkin hazırlıq
+
+```{r ilkinhaz,echo=F,error=F,warning=F,message=F,include=T}
+library(ggplot2)
+library(data.table)
+library(readr)
+library(readxl)
+library(xlsx)
+library(lubridate)
+library(dplyr)
+library(plotly)
+library(DT)
+library(ggthemes)
+library(hrbrthemes)
+library(janitor)
+library(RMariaDB)
+
+maria=dbConnect(
+  drv = RMariaDB::MariaDB(), 
+  username = "code_ayshankha",
+  password = Sys.getenv("sql_burada"), 
+  host = "128.140.38.157", 
+  port = 3306,
+  charset='utf8mb4'
+)
+dbSendQuery(maria, "SET NAMES utf8mb4;")
+Sys.setlocale(category = "LC_ALL",locale = "az_AZ")
+db="code_train"
+dbSendQuery(maria,paste("use ",db,";",sep=""))
+heart=data.table(dbGetQuery(maria,"select * from heart_disease"))
+hd_map=data.table(dbGetQuery(maria,"select * from hd_map"))
+dbDisconnect(maria)
+
+```
+
+
+
+
+### Tapsiriq 1
+> Cins gender_name məlumat həddinin yaradın (0 - Male, 1 - Female)
+
+```{r t1,echo=T,error=F,warning=F,message=F,include=T}
+ 
+heart=heart[, gender_name := case_when(
+  gender==0 ~ "Male",
+  gender==1 ~ "Female",
+  TRUE ~ NA
+)]
+
+```
+
+
+
+### Tapsiriq 2
+
+>  Ölkə və cinsə görə xəstələrin sayını və orta xolesterin (chol) dərəcəsini aqreqasiya edin.
+
+```{r t2,echo=T,error=F,warning=F,message=F,include=T}
+
+Heart_disease=merge(heart,hd_map,by="patient_id", all.x = TRUE)
+
+newtab=Heart_disease[,list(xeste_sayi=n_distinct(patient_id),avg_chol=round(mean(chol),2)),by=list(country_of_residence,gender_name)] 
+
+datatable(newtab,
+          extensions = 'Buttons',
+           options = list(paging = TRUE,
+                          searching = TRUE,
+                          fixedColumns = TRUE,
+                          autoWidth = TRUE,
+                          ordering = TRUE,
+                          dom = 'Bftp',
+                          buttons = c('copy', 'csv', 'excel','print')
+                            ))
+```
+
+
+### Tapsiriq 3
+> Cinsə görə yaş dağılımını təhlil edin. 
+
+```{r t3,echo=T,error=F,warning=F,message=F,include=T}
+boxplot=ggplot(heart,aes(x=gender_name,y=age))+geom_boxplot(fill="darkblue",color="white")+labs(x="Cins",y="Yaş")+theme_ft_rc()
+
+ggplotly(boxplot)
+ 
+```
+
+
+
+Bu qrafikdən görünür ki, pasiyentlərin yaş bölgüsü həm qadınlar, həm də kişilər üçün oxşar xarakter daşıyır, lakin bəzi fərqlər var. Median yaş kişilərdə qadınlara nisbətən bir qədər yüksəkdir (~57 vs. ~55). Yaş diapazonu qadınlarda 29–76 arası, kişilərdə isə təxminən 33–77 aralığında dəyişir, yəni hər iki cinsdə oxşar, lakin kişilərdə bir qədər geniş yayılma müşahidə olunur. Qadınlarda daha çox sıxlaşma orta yaş həddində, kişilərdə isə bir az yuxarı yaş həddindədir. Anomaliya müşahidə olunmur, lakin qadınlarda minimum yaş dəyərləri kişilərə nisbətən bir qədər aşağıdır. 
+
+
+### Tapsiriq 4
+
+> Yaş kateqoriyası məlumat həddini yaradın. 
+
+```{r t4,echo=T,error=F,warning=F,message=F,include=T}
+heart=heart[, age_category := case_when(
+  age>=0 & age<18  ~ "0>=18 yaş Uşaq ",
+  age>=18 & age<30  ~ "18>=30 yaş (Gənc)",
+  age>=30 & age<50  ~ "30>=50 yaş (Orta yaşlı)",
+  age>=50 & age<70  ~ "50>=70 yaş (Yaşlı)" ,
+  age>=70 ~ "70=<... (Qoca)",
+  TRUE ~ NA
+)]
+ 
+```
+
+
+
+
+### Tapsiriq 5
+> Doğum tarixinin ilinə görə xəstələrin sayını vizuallaışdırın. Şərh verin.
+
+```{r t5,echo=T,error=F,warning=F,message=F,include=T}
+
+age_day=heart[,list(xeste_sayi=n_distinct(patient_id)),by=list(dogum_ili=year(Sys.Date())-age)]
+
+age_day_gp=ggplot(age_day,aes(x=dogum_ili,y=xeste_sayi))+geom_col(fill="darkblue",color="darkblue")+theme_ft_rc()
+
+ggplotly(age_day_gp)
+ 
+```
+
+
+
+Qrafikin təhlili göstərir ki, pasiyentlərin əsas hissəsi 1960–1980-ci illərdə doğulan şəxslərdir və ən yüksək sıxlıq xüsusilə 1965–1975-ci illərdə müşahidə olunur. Bu tendensiya datasetin daha çox orta yaşlı və yaşlı qrupları əhatə etdiyini göstərir. 1950-ci illərdən öncə və 1990-cı ildən sonra doğulanlarda isə pasiyent sayı çox azdır ki, bu da həm məlumat boşluğu, həm də yaş strukturu məhdudiyyəti ilə izah oluna bilər. Beləliklə, məlumatların ümumi mənzərəsi xəstəliklərin daha çox orta yaş və yuxarı yaş qruplarında cəmləşdiyini ortaya qoyur.
+
+### Tapsiriq 6
+> Yaş kateqoriyası və ölkəyə görə xəstə sayı və ortalama xolesterin miqdarını aqreqasiya edin. Vizuallaşdırın və şərh verin. (2 ayrı qrafik xəstə sayı və xolesterin miqdarı.
+
+```{r t6,echo=T,error=F,warning=F,message=F,include=T}
+Heart_disease=merge(heart,hd_map,by="patient_id", all.x = TRUE)
+new=Heart_disease[,list(xeste_sayi=n_distinct(patient_id),avg_chol=round(mean(chol),2)),by=list(age_category,country_of_residence)] 
+
+datatable(new,
+          extensions = 'Buttons',
+           options = list(paging = TRUE,
+                          searching = TRUE,
+                          fixedColumns = TRUE,
+                          autoWidth = TRUE,
+                          ordering = TRUE,
+                          dom = 'Bftp',
+                          buttons = c('copy', 'csv', 'excel','print')
+                            ))
+ 
+```
+
+```{r t6.1,echo=T,error=F,warning=F,message=F,include=T}
+newgg1=ggplot(new,aes(x=country_of_residence,y=xeste_sayi))+geom_col(fill="purple",color="purple")+facet_wrap(.~ age_category ,scales="free")+theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 0.5))+labs(x="Olke")+theme_ft_rc()
+
+ggplotly(newgg1)
+ 
+```
+
+
+
+Qrafikə əsasən, gənc yaş qrupunda (18–30) bütün xəstə xəstə sayı çox aşağıdır və balanslı ödəyir. Orta yaş (30–50) payda ABŞ-da xəstə sayı digərlərinə çox yüksək səviyyədədir ki, bu danomaliya kimi qiymətləndirilə bilər. Yaşlı qrupda (50–70) ümumi xəstə sayı artır və artır ABŞ və Almaniya ön plana çıxır. Qoca yaş (70+) bir müddət ərzində işləyir az olsa da, ABŞ-ın yenidən başqa fəaliyyətinin vəziyyəti tam nəticə göstərir. Boşluq kimi bəzi bəzi (məsələn, Rusiya və BƏƏ) yaşlı və qoca qruplarda xəstə sayının çox az olması qeyd olunur. 
+
+
+
+
+```{r t6.2,echo=T,error=F,warning=F,message=F,include=T}
+newgg2=ggplot(new,aes(x=country_of_residence,y=avg_chol))+geom_col(fill="purple",color="purple")+facet_wrap(.~ age_category ,scales="free")+theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 0.5))+labs(x="Olke",y="Orta Chol deyeri")+theme_ft_rc()
+
+ggplotly(newgg2)
+ 
+ 
+```
+
+
+
+18–30 yaş (Gənc) qrupunda Argentina, Germany, Russia və USA üzrə orta xolesterin dəyərləri çox yaxın və sabit olub təxminən 200 civarındadır. 30–50 yaş (Orta yaşlı) pasiyentlərdə dəyərlər bir qədər yüksəlib və ölkələr arasında kiçik fərqlər görünür, ən yüksək göstərici Argentinada müşahidə olunur. 50–70 yaş (Yaşlı) kateqoriyasında xolesterin dəyərləri daha da artaraq bütün ölkələrdə təxminən 250 civarında qərarlaşıb. 70 yaşdan yuxarı (Qoca) pasiyentlərdə isə ən geniş dəyişiklik müşahidə olunur və bəzi ölkələrdə (məsələn, Russia) dəyər 300-ə yaxınlaşır, digərlərində isə daha aşağı qalır.
+
+
+
+### Tapsiriq 7
+> Yaş və xolesterin miqdarına görə scater plot qurun. Regression xətti əlavə edin. Şərh verin.
+
+```{r t7,echo=T,error=F,warning=F,message=F,include=T}
+regres=ggplot(heart,aes(x=age,y=chol))+geom_point(color="blue")+geom_smooth(method = "lm",color="purple")+labs(x="Yas",y="Xolesterin miqdari")+theme_ft_rc()
+ggplotly(regres)
+```
+
+
+Qrafikdən göründüyü kimi, yaş artdıqca xolesterin səviyyəsinin də ümumilikdə yüngül artım meyli müşahidə olunur və bu da zəif müsbət korrelyasiyanı göstərir. Bununla belə, nöqtələrin regresiya xətti ətrafında geniş şəkildə dağılması əlaqənin güclü olmadığını ortaya qoyur. Eyni zamanda, bəzi pasiyentlərdə yaşdan asılı olmadan çox yüksək xolesterin göstəricilərinə rast gəlinir ki, bunlar statistik baxımdan outlier hesab oluna bilər. Bu nəticə göstərir ki, yaş faktorunun müəyyən təsiri olsa da, xolesterin səviyyəsini izah edən digər dəyişənlərin də əhəmiyyətli rol oynadığı ehtimal olunur.
+
+
+ 
+### Tapsiriq 8
+> Yeni obyektdə ölkə və ad məlumat həddlərini silin. patient_ıd-yə görə digər rəqəmsal məlumat həddlərini melt edin. Yeni obyeektdə olmalı olan məlumat həddləri: patient_ıd, parameter, value
+
+```{r t8,echo=T,error=F,warning=F,message=F,include=T}
+yeniobyekt=Heart_disease
+yeniobyekt$country_of_residence=NULL 
+yeniobyekt$patient_name=NULL
+yeniobyekt$age_category=NULL
+yeniobyekt$gender_name=NULL
+yeniobyekt = melt(yeniobyekt, id.vars = "patient_id", variable.name = "parameter", value.name = "value")
+
+datatable(yeniobyekt,
+          extensions = 'Buttons',
+           options = list(paging = TRUE,
+                          searching = TRUE,
+                          fixedColumns = TRUE,
+                          autoWidth = TRUE,
+                          ordering = TRUE,
+                          dom = 'Bftp',
+                          buttons = c('copy', 'csv', 'excel','print')
+                            ))
+
+```
+
+
+
+### Tapsiriq 9
+> Sükut vəziyyətində qan təzyiqini (trestbps) ölkəyə görə vizuallaşdırın. (boxplot, facet-dən istifadə edilməməlidir).
+
+```{r t9,echo=T,error=F,warning=F,message=F,include=T}
+
+ggpl=ggplot(Heart_disease,aes(x=country_of_residence,y=trestbps))+geom_col(fill="blue",color="blue")+labs(x="OLke",y="Qan teyziqi")+theme_ft_rc()
+
+ggplotly(ggpl)
+```
+
+
+
+Argentina, Germany, Japan, Russia və UAE-də dəyərlər bir-birinə yaxın olub orta səviyyədədir və bu, daha balanslı paylanmaya işarə edir. Australia-da göstəricilər əhəmiyyətli dərəcədə yüksəkdir, bu isə həmin ölkə üzrə ya pasiyentlərin seçilmiş qrupunda xüsusi risk faktorlarının mövcudluğunu, ya da məlumatlarda mümkün outlier-ləri göstərir. USA isə bütün ölkələr arasında ən yüksək dəyəri ilə açıq şəkildə fərqlənir, bu da həm anomaliya ehtimalını, həm də real olaraq yüksək qan təzyiqi riskinin bu qrupda daha çox olduğunu göstərir. Burada diqqət çəkən əsas məqam, USA ilə digər ölkələr arasında böyük fərqin olmasıdır ki, bu, ya məlumatların toplanmasında boşluq (ölçmələrin sayı və ya keyfiyyəti), ya da xüsusi regional sağlamlıq problemlərinin göstəricisi ola bilər. 
+
+
+### Tapsiriq 10
+> Yaradılan hər yaş kateqoriyası üçün ayrıca obyekt yaradıb "Desktop/Heart_disease" qovluğuna .rds formatında save edin. Yaradılan yaş kateqoriyaları qədər çalışdırılan for loop-dan istifadə edilməlidir. Fayl adı şablonu: hd_{yaş kateqoriyası}.rds
+
+```{r t10,echo=T,error=F,warning=F,message=F,include=T}
+
+setwd("C:/Users/user/OneDrive/Masaüstü/Heart_disease")
+  
+yas_cat_clean=Heart_disease[, age_category := case_when(
+  age>=0 & age<18  ~ "0_18_yas ",
+  age>=18 & age<30  ~ "18_30_yas",
+  age>=30 & age<50  ~ "30_50_yas",
+  age>=50 & age<70  ~ "50_70_yas" ,
+  age>=70 ~ "70..._yas",
+  TRUE ~ NA
+)]
+
+yas_cat=sort(unique(yas_cat_clean$age_category))
+
+for (k in 1:length(yas_cat)) {
+  yascat=yas_cat_clean %>% filter(age_category==yas_cat[k])
+  saveRDS(yas_cat,paste("hd_",yas_cat[k],".rds",sep = ""))
+  }
+```
+
